@@ -1,0 +1,44 @@
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+# Load MovieLens dataset (small dataset for simplicity)
+movies = pd.read_csv('movies.csv')
+ratings = pd.read_csv('ratings.csv')
+
+# Merge movies and ratings data
+movie_ratings = pd.merge(ratings, movies, on='movieId')
+
+# Create a user-movie matrix
+user_movie_ratings = movie_ratings.pivot_table(index='userId', columns='title', values='rating')
+
+# Fill NaN values with 0 (assuming no rating means a rating of 0)
+user_movie_ratings = user_movie_ratings.fillna(0)
+
+# Calculate cosine similarity between users
+user_similarity = cosine_similarity(user_movie_ratings)
+
+# Define a function to get movie recommendations
+def get_movie_recommendations(movie_title, num_recommendations=5):
+    movie_ratings = user_movie_ratings[movie_title]
+    similar_scores = user_similarity.dot(movie_ratings)
+    similar_movies = list(user_movie_ratings.columns)
+    recommendations = pd.Series(similar_scores, index=similar_movies).sort_values(ascending=False)
+    recommendations = recommendations.drop(movie_title)  # Remove the input movie
+    top_recommendations = recommendations.head(num_recommendations)
+    return top_recommendations.index.tolist()
+
+# API endpoint for movie recommendations
+@app.route('/recommendations', methods=['POST'])
+def recommend_movies():
+    data = request.get_json()
+    movie_title = data.get('movie_title')
+    num_recommendations = data.get('num_recommendations', 5)
+
+    recommendations = get_movie_recommendations(movie_title, num_recommendations)
+    return jsonify({'recommendations': recommendations})
+
+if __name__ == '__main__':
+    app.run(debug=True)
